@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "credenum"
+version = "0.1.0"
+description = "Hunt for passwords, SSH keys, and tokens on a Linux system."
+requires-python = ">=3.9"
+
+[project.scripts]
+credenum = "credenum.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["credenum"]
