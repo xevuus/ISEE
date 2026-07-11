@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from credenum.report import build_report, render_json, render_text
 
@@ -32,6 +33,12 @@ def main() -> None:
         print(render_json(findings))
     else:
         print(render_text(findings))
+
+    # Exit code conventions matter for scripting: 0 means "ran fine, all
+    # clear" so `credenum && deploy.sh` only proceeds when nothing was
+    # found. 1 means "ran fine, but found something" -- distinct from
+    # argparse's own exit(2) on a bad flag, which means "didn't even run".
+    sys.exit(1 if findings else 0)
 
 
 if __name__ == "__main__":
