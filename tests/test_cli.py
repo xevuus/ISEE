@@ -9,7 +9,15 @@ def test_exits_zero_when_no_findings(tmp_path, monkeypatch):
     # monkeypatch temporarily replaces sys.argv for this test only,
     # then restores the original automatically when the test ends --
     # same idea as tmp_path, but for patching instead of files.
-    monkeypatch.setattr(sys, "argv", ["credenum", "--root", str(tmp_path)])
+    #
+    # --skip-process matters here: process scanning reads the REAL /proc
+    # on whatever machine runs this test, so without skipping it, this
+    # "no findings" assertion would depend on what happens to be running
+    # (e.g. a browser process with flags that match our -p heuristic) --
+    # not on anything this test actually controls.
+    monkeypatch.setattr(
+        sys, "argv", ["credenum", "--root", str(tmp_path), "--skip-process"]
+    )
 
     # main() calls sys.exit(), which doesn't return a value like a normal
     # function -- it raises SystemExit. pytest.raises catches it so we

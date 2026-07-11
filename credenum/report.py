@@ -19,10 +19,17 @@ class Finding:
     detail: str
 
 
-def build_report(root: str) -> list[Finding]:
+def build_report(root: str, include_process: bool = True) -> list[Finding]:
     """Run every hunter and normalize their differently-shaped results
     into one common Finding shape, so the rest of the program doesn't
-    need to know each hunter's internal dict layout."""
+    need to know each hunter's internal dict layout.
+
+    include_process exists because find_process_secrets() always reads
+    the real, live /proc -- unlike the other hunters, it isn't scoped by
+    `root`. That makes it the one part of the report that can't be
+    pointed at an isolated test directory, so callers who need a fully
+    deterministic result (tests, CI) need a way to leave it out.
+    """
     findings: list[Finding] = []
 
     for f in find_ssh_keys(root):
@@ -40,7 +47,7 @@ def build_report(root: str) -> list[Finding]:
         detail = f"{f['type']}: {f['match']}"
         findings.append(Finding("TOKEN", "HIGH", f"{f['path']}:{f['line']}", detail))
 
-    for f in find_process_secrets():
+    for f in (find_process_secrets() if include_process else []):
         # environ findings are higher-confidence: a credential-shaped key
         # WITH a non-empty value already set in a live process's actual
         # environment. cmdline findings (the -p flag heuristics) are
