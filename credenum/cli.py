@@ -1,5 +1,4 @@
 import argparse
-import colorsys
 import sys
 
 from rich.console import Console
@@ -35,39 +34,32 @@ BANNER_IMAGE = r"""⡿⢿⠛⣻⠿⢿⡿⢿⠿⠿⠻⠿⠿⢿⢿⣿⣿⣿⣿⣿�
 ⣿⣿⣿⣿⣿⣿⣯⣷⣷⡆⢠⡇⡼⣆⣰⢰⢰⡅⣷⣰⣳⣿⡿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣳⡿⣿⣿⣜⣯⣾⢀⡆⣤⣖⣸⣧⢸⡄⣤⣾⣾⣽⣿⣿⣿⣿⣿⣿
 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣿⢥⣿⣾⣼⣟⣿⣽⣿⣷⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⣿⣿⣽⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿"""
 
-# (row, column) bounding boxes for the two eyes within BANNER_IMAGE,
-# found by rendering the raw braille text to a PNG with a monospace font
-# and reading off pixel coordinates -- there's no way to know where a
-# face's eyes are from the raw unicode characters alone. Each box also
-# contains a small dense cluster of characters (the pupil) surrounded by
-# mostly blank/sparse ones (the eye socket) -- confirmed against the
-# actual string, not just the rendered image, since eyeballing pixels
-# alone is easy to get slightly wrong.
-_LEFT_EYE = (range(5, 10), range(5, 26))
-_RIGHT_EYE = (range(5, 10), range(53, 73))
+# Two endpoints to interpolate between, instead of sweeping the full
+# hue wheel -- a red-to-pink gradient stays in one "family" of color
+# instead of reading as a rainbow. (255, 0, 60) is a slightly pink-shifted
+# red rather than pure (255, 0, 0), so the transition into hot pink
+# (255, 105, 180) feels like one continuous hue, not two unrelated colors
+# stitched together.
+_GRADIENT_START = (255, 0, 60)
+_GRADIENT_END = (255, 105, 180)
 
 
-def _in_eye(row: int, col: int) -> bool:
-    return any(row in rows and col in cols for rows, cols in (_LEFT_EYE, _RIGHT_EYE))
-
-
-def _rainbow_hex(fraction: float) -> str:
-    # fraction is 0.0 (top of banner) to 1.0 (bottom). Sweeping hue over
-    # ~0-295 degrees (0.0-0.82 of the full 0-1 hue wheel) instead of the
-    # full 360 avoids the gradient wrapping back around to red at the
-    # bottom, which would visually clash with the red eyes.
-    r, g, b = colorsys.hsv_to_rgb(fraction * 0.82, 0.85, 1.0)
-    return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+def _gradient_hex(fraction: float) -> str:
+    # fraction is 0.0 (top of banner) to 1.0 (bottom). Linear interpolation
+    # per channel: at fraction=0 you get _GRADIENT_START exactly, at
+    # fraction=1 you get _GRADIENT_END exactly, in between a blend of both.
+    r, g, b = (
+        round(start + (end - start) * fraction)
+        for start, end in zip(_GRADIENT_START, _GRADIENT_END)
+    )
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 def build_banner() -> Text:
-    """Assembles the banner as a rich Text object, built character by
-    character: a rainbow gradient sweeps top-to-bottom across the title
-    and the portrait, while every character inside the eye bounding
-    boxes is forced to bold red regardless of where it falls in the
-    gradient. A plain string can only have one style; getting different
-    colors on different characters within the same block of text requires
-    building it up piece by piece like this.
+    """Assembles the banner as a rich Text object: a red-to-pink gradient
+    sweeps top-to-bottom across the title and the portrait as one
+    continuous pattern, eyes included -- no per-character overrides, so
+    every part of the banner is colored by the same rule.
     """
     title_lines = BANNER_TITLE.splitlines()
     image_lines = BANNER_IMAGE.splitlines()
@@ -77,15 +69,11 @@ def build_banner() -> Text:
     row_index = 0
 
     for line in title_lines:
-        banner.append(line + "\n", style=f"bold {_rainbow_hex(row_index / total_rows)}")
+        banner.append(line + "\n", style=f"bold {_gradient_hex(row_index / total_rows)}")
         row_index += 1
 
-    for image_row, line in enumerate(image_lines):
-        color = _rainbow_hex(row_index / total_rows)
-        for col, ch in enumerate(line):
-            style = "bold red" if _in_eye(image_row, col) else color
-            banner.append(ch, style=style)
-        banner.append("\n")
+    for line in image_lines:
+        banner.append(line + "\n", style=_gradient_hex(row_index / total_rows))
         row_index += 1
 
     return banner
