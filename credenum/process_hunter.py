@@ -26,6 +26,20 @@ KNOWN_BENIGN_ENV_KEYS = {
     "GNOME_KEYRING_CONTROL",  # path to the keyring daemon's socket, not a secret itself
 }
 
+# Remediation differs by *how* the secret was exposed, not by which
+# process it came from -- cmdline and environ are two different leak
+# mechanisms with two different fixes.
+REMEDIATION = {
+    "cmdline": (
+        "Avoid passing secrets as CLI arguments -- they're visible to any user "
+        "via `ps aux` or /proc. Use a prompt, config file, or env var instead."
+    ),
+    "environ": (
+        "Avoid storing secrets directly in a long-lived process's environment "
+        "where avoidable; prefer short-lived tokens or a secrets manager."
+    ),
+}
+
 
 def _read_proc_entries(pid_dir: Path, name: str) -> list[str]:
     """cmdline and environ are both NUL-separated blobs of bytes --
@@ -86,6 +100,7 @@ def find_process_secrets() -> list[dict]:
                     "type": label,
                     "match": _redact(match.group(0)),
                     "process": process_name,
+                    "remediation": REMEDIATION["cmdline"],
                 })
 
         for entry in _read_proc_entries(pid_dir, "environ"):
@@ -97,6 +112,7 @@ def find_process_secrets() -> list[dict]:
                     "type": key,
                     "match": _redact(value),
                     "process": process_name,
+                    "remediation": REMEDIATION["environ"],
                 })
 
     return findings

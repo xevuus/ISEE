@@ -36,6 +36,37 @@ PLACEHOLDER_MARKERS = (
     "sample", "dummy", "todo", "insert_", "replace_me", "fake", "<", ">",
 )
 
+# Provider-specific revoke instructions, keyed by the same label used in
+# TOKEN_PATTERNS -- we can't tell whether a match is a real, live secret
+# or a harmless test fixture, so the advice always leads with "if real".
+TOKEN_REMEDIATION = {
+    "AWS Access Key ID": (
+        "If real, deactivate/rotate this key immediately in IAM > Security "
+        "Credentials, then remove it from this file and use env vars or a "
+        "secrets manager instead."
+    ),
+    "GitHub Token": (
+        "If real, revoke it at github.com/settings/tokens, then remove it from "
+        "this file -- inject a fresh token via CI secrets instead."
+    ),
+    "Slack Token": (
+        "If real, revoke it in the Slack app's OAuth & Permissions settings, "
+        "then remove it from this file."
+    ),
+    "Google API Key": (
+        "If real, delete/regenerate it in Google Cloud Console > APIs & Services "
+        "> Credentials, and restrict the replacement key by IP or referrer."
+    ),
+    "JWT": (
+        "If still valid, treat it as compromised -- revoke the underlying "
+        "session/refresh token if possible, and avoid storing live JWTs in files."
+    ),
+    "Generic assigned secret": (
+        "If real, rotate it at the source system, then remove it from this "
+        "file -- use an environment variable or secrets manager reference instead."
+    ),
+}
+
 
 def _looks_like_placeholder(value: str) -> bool:
     # Normalize dashes to underscores so "your-api-key-here" and
@@ -113,6 +144,7 @@ def find_tokens(root: str) -> list[dict]:
                                 "line": lineno,
                                 "type": label,
                                 "match": _redact(match.group(0)),
+                                "remediation": TOKEN_REMEDIATION[label],
                             })
             except (OSError, PermissionError):
                 continue

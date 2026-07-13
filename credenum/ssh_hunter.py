@@ -49,10 +49,22 @@ def find_ssh_keys(root: str) -> list[dict]:
                     continue
 
             if name_match or content_match:
+                flags = permission_flags(path)
+                # The fix differs depending on *why* the key is a risk:
+                # a bad permission bit has a one-line fix, but a key with
+                # correct permissions is still worth hardening further.
+                if flags:
+                    remediation = f"chmod 600 {path} -- private keys must not be group/other readable."
+                else:
+                    remediation = (
+                        "Ensure this key has a passphrase; consider a hardware-backed "
+                        "key (e.g. YubiKey) for high-value access."
+                    )
                 findings.append({
                     "path": str(path),
                     "matched_by": "filename" if name_match else "content",
-                    "permission_flags": permission_flags(path),
+                    "permission_flags": flags,
+                    "remediation": remediation,
                 })
 
     return findings

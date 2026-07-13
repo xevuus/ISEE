@@ -38,6 +38,7 @@ class Finding:
     severity: str     # "HIGH" | "MEDIUM"
     location: str     # a file path, or "pid 1234 [environ]" for process findings
     detail: str
+    remediation: str  # a concrete, actionable fix -- not just "this is bad"
 
 
 def build_report(root: str, include_process: bool = True) -> list[Finding]:
@@ -58,15 +59,15 @@ def build_report(root: str, include_process: bool = True) -> list[Finding]:
         detail = f"matched by {f['matched_by']}"
         if f["permission_flags"]:
             detail += " - " + ", ".join(f["permission_flags"])
-        findings.append(Finding("SSH_KEY", severity, f["path"], detail))
+        findings.append(Finding("SSH_KEY", severity, f["path"], detail, f["remediation"]))
 
     for f in find_dotfiles(root):
         severity = "HIGH" if f["permission_flags"] else "MEDIUM"
-        findings.append(Finding("CRED_FILE", severity, f["path"], f["reason"]))
+        findings.append(Finding("CRED_FILE", severity, f["path"], f["reason"], f["remediation"]))
 
     for f in find_tokens(root):
         detail = f"{f['type']}: {f['match']}"
-        findings.append(Finding("TOKEN", "HIGH", f"{f['path']}:{f['line']}", detail))
+        findings.append(Finding("TOKEN", "HIGH", f"{f['path']}:{f['line']}", detail, f["remediation"]))
 
     for f in (find_process_secrets() if include_process else []):
         # environ findings are higher-confidence: a credential-shaped key
@@ -77,7 +78,7 @@ def build_report(root: str, include_process: bool = True) -> list[Finding]:
         severity = "HIGH" if f["source"] == "environ" else "MEDIUM"
         location = f"pid {f['pid']} [{f['source']}]"
         detail = f"{f['type']}: {f['match']} (process: {f['process']})"
-        findings.append(Finding("PROCESS", severity, location, detail))
+        findings.append(Finding("PROCESS", severity, location, detail, f["remediation"]))
 
     # Group HIGH severity first, then by category, so the report reads
     # worst-first instead of "whichever hunter happened to run first".
@@ -125,15 +126,16 @@ def render_rich(findings: list[Finding], console: Console | None = None) -> None
         # Paths/PIDs read badly when wrapped mid-word across lines, so we
         # truncate long ones with an ellipsis instead ("no_wrap" + the
         # "ellipsis" overflow mode) -- worse for seeing the whole path,
-        # much better for scanning a report quickly. Detail text wraps
-        # normally since it's prose, not a single unbreakable token.
+        # much better for scanning a report quickly. Detail/Fix text wrap
+        # normally since they're prose, not a single unbreakable token.
         table.add_column("Location", ratio=3, no_wrap=True, overflow="ellipsis")
-        table.add_column("Detail", ratio=2, overflow="fold")
+        table.add_column("Detail", ratio=3, overflow="fold")
+        table.add_column("Fix", ratio=4, overflow="fold", style="dim")
 
         for f in items:
             style = SEVERITY_STYLES.get(f.severity)
             severity_cell = f"[{style}]{f.severity}[/{style}]" if style else f.severity
-            table.add_row(severity_cell, f.location, f.detail)
+            table.add_row(severity_cell, f.location, f.detail, f.remediation)
 
         console.print(table)
 
