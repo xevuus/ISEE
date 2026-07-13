@@ -1,10 +1,31 @@
 import json
+from collections import Counter
 from dataclasses import asdict, dataclass
+
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 from credenum.dotfile_hunter import find_dotfiles
 from credenum.process_hunter import find_process_secrets
 from credenum.ssh_hunter import find_ssh_keys
 from credenum.token_hunter import find_tokens
+
+# Friendlier display names, and the fixed order categories are always
+# shown in (independent of which one happens to have the worst finding --
+# unlike the overall `findings` sort, which is severity-first).
+CATEGORY_LABELS = {
+    "SSH_KEY": "SSH Keys",
+    "CRED_FILE": "Credential Files",
+    "TOKEN": "Tokens & API Keys",
+    "PROCESS": "Process / Environment Secrets",
+}
+
+# rich markup strings: "[bold red]text[/bold red]" -- rich parses these
+# the way HTML parses tags. bold red draws the eye to HIGH severity rows
+# without needing to read every line of the report.
+SEVERITY_STYLES = {"HIGH": "bold red", "MEDIUM": "bold yellow"}
 
 # A dataclass is a class whose only job is to hold data. Writing
 # `@dataclass` generates __init__, __repr__, and __eq__ for us based on
@@ -65,16 +86,56 @@ def build_report(root: str, include_process: bool = True) -> list[Finding]:
     return findings
 
 
-def render_text(findings: list[Finding]) -> str:
-    if not findings:
-        return "No findings."
+def render_rich(findings: list[Finding], console: Console | None = None) -> None:
+    """Render findings as a colored, grouped report for a human reading
+    a terminal. Unlike render_json (plain, for scripts to parse), this
+    prints directly instead of returning a string -- rich needs a live
+    Console to know things like the terminal's width and whether color
+    is even supported (it auto-detects and turns color off automatically
+    when output is piped to a file, so `credenum > report.txt` stays
+    readable plain text without any extra code from us).
+    """
+    console = console or Console()
 
-    lines = []
+    if not findings:
+        console.print("[bold green]No findings.[/bold green]")
+        return
+
+    counts = Counter(f.severity for f in findings)
+    summary_parts = []
+    for severity, style in SEVERITY_STYLES.items():
+        if counts.get(severity):
+            summary_parts.append(f"[{style}]{severity}: {counts[severity]}[/{style}]")
+    summary_parts.append(f"[bold]{len(findings)} total[/bold]")
+    console.print(Panel("   ".join(summary_parts), title="Scan Summary", border_style="cyan"))
+
+    grouped: dict[str, list[Finding]] = {}
     for f in findings:
-        lines.append(f"[{f.severity:6}] [{f.category:9}] {f.location}")
-        lines.append(f"           -> {f.detail}")
-    lines.append(f"\n{len(findings)} total finding(s).")
-    return "\n".join(lines)
+        grouped.setdefault(f.category, []).append(f)
+
+    for category, label in CATEGORY_LABELS.items():
+        items = grouped.get(category)
+        if not items:
+            continue
+
+        console.print(f"\n[bold underline]{label}[/bold underline]")
+
+        table = Table(box=box.SIMPLE_HEAVY, header_style="bold", expand=True)
+        table.add_column("Severity", width=8, no_wrap=True)
+        # Paths/PIDs read badly when wrapped mid-word across lines, so we
+        # truncate long ones with an ellipsis instead ("no_wrap" + the
+        # "ellipsis" overflow mode) -- worse for seeing the whole path,
+        # much better for scanning a report quickly. Detail text wraps
+        # normally since it's prose, not a single unbreakable token.
+        table.add_column("Location", ratio=3, no_wrap=True, overflow="ellipsis")
+        table.add_column("Detail", ratio=2, overflow="fold")
+
+        for f in items:
+            style = SEVERITY_STYLES.get(f.severity)
+            severity_cell = f"[{style}]{f.severity}[/{style}]" if style else f.severity
+            table.add_row(severity_cell, f.location, f.detail)
+
+        console.print(table)
 
 
 def render_json(findings: list[Finding]) -> str:
